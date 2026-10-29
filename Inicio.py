@@ -1,121 +1,142 @@
-import streamlit as st
-import paho.mqtt.client as mqtt
 import json
 import time
+import paho.mqtt.client as mqtt
+import streamlit as st
 
-# Configuración de la página
+# Configuración visual de la página
 st.set_page_config(
-    page_title="Lector de Sensor MQTT",
-    page_icon="📡",
-    layout="centered"
+    page_title="IoT Live Telemetry",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Estilos CSS personalizados para tarjetas elegantes e indicadores
+st.markdown("""
+<style>
+    .metric-card {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 18px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        text-align: center;
+    }
+    .metric-title {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #A0AEC0;
+        margin-bottom: 6px;
+    }
+    .metric-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #00E676;
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Variables de estado
 if 'sensor_data' not in st.session_state:
     st.session_state.sensor_data = None
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = None
+
 
 def get_mqtt_message(broker, port, topic, client_id):
-    """Función para obtener un mensaje MQTT"""
+    """Obtiene el payload más reciente mediante suscripción temporal."""
     message_received = {"received": False, "payload": None}
-    
+
     def on_message(client, userdata, message):
+        raw_payload = message.payload.decode()
         try:
-            payload = json.loads(message.payload.decode())
-            message_received["payload"] = payload
-            message_received["received"] = True
-        except:
-            # Si no es JSON, guardar como texto
-            message_received["payload"] = message.payload.decode()
-            message_received["received"] = True
-    
+            message_received["payload"] = json.loads(raw_payload)
+        except Exception:
+            message_received["payload"] = raw_payload
+        message_received["received"] = True
+
     try:
-        client = mqtt.Client(client_id=client_id)
+        # Compatibilidad con Paho MQTT v1 y v2
+        try:
+            client = mqtt.Client(paho.CallbackAPIVersion.VERSION1, client_id=client_id)
+        except AttributeError:
+            client = mqtt.Client(client_id=client_id)
+
         client.on_message = on_message
         client.connect(broker, port, 60)
         client.subscribe(topic)
         client.loop_start()
-        
-        # Esperar máximo 5 segundos
-        timeout = time.time() + 5
+
+        timeout = time.time() + 4.0
         while not message_received["received"] and time.time() < timeout:
-            time.sleep(0.1)
-        
+            time.sleep(0.05)
+
         client.loop_stop()
         client.disconnect()
-        
+
         return message_received["payload"]
-    
+
     except Exception as e:
         return {"error": str(e)}
 
-# Sidebar - Configuración
+
+# ------------------ SIDEBAR (Configuración) ------------------
 with st.sidebar:
-    st.subheader('⚙️ Configuración de Conexión')
-    
-    broker = st.text_input('Broker MQTT', value='broker.mqttdashboard.com', 
-                           help='Dirección del broker MQTT')
-    
-    port = st.number_input('Puerto', value=1883, min_value=1, max_value=65535,
-                           help='Puerto del broker (generalmente 1883)')
-    
-    topic = st.text_input('Tópico', value='Sensor/THP2',
-                          help='Tópico MQTT a suscribirse')
-    
-    client_id = st.text_input('ID del Cliente', value='streamlit_client',
-                              help='Identificador único para este cliente')
+    st.title("🎛️ Panel de Control")
+    st.caption("Configuración de Broker & Telemetría")
 
-# Título
-st.title('📡 Lector de Sensor MQTT')
+    with st.container(border=True):
+        st.subheader("🌐 Servidor MQTT")
+        broker = st.text_input('Broker Host', value='broker.mqttdashboard.com')
+        port = st.number_input('Puerto', value=1883, min_value=1, max_value=65535)
 
-# Información al inicio
-with st.expander('ℹ️ Información', expanded=False):
-    st.markdown("""
-    ### Cómo usar esta aplicación:
-    
-    1. **Broker MQTT**: Ingresa la dirección del servidor MQTT en el sidebar
-    2. **Puerto**: Generalmente es 1883 para conexiones no seguras
-    3. **Tópico**: El canal al que deseas suscribirte
-    4. **ID del Cliente**: Un identificador único para esta conexión
-    5. Haz clic en **Obtener Datos** para recibir el mensaje más reciente
-    
-    ### Brokers públicos para pruebas:
-    - broker.mqttdashboard.com
-    - test.mosquitto.org
-    - broker.hivemq.com
-    """)
+    with st.container(border=True):
+        st.subheader("📡 Tópico y Cliente")
+        topic = st.text_input('Tópico', value='Sensor/THP2')
+        client_id = st.text_input('ID de Cliente', value='streamlit_monitor')
+
+    st.markdown("---")
+    st.markdown("💡 **Tip:** Asegúrate de que el broker acepte conexiones sin TLS en el puerto 1883.")
+
+
+# ------------------ HEADER ------------------
+col_title, col_btn = st.columns([3, 1], vertical_alignment="bottom")
+
+with col_title:
+    st.title("📡 Dashboard de Telemetría IoT")
+    st.caption("Visualización de métricas en tiempo real a través del protocolo MQTT")
+
+with col_btn:
+    fetch_click = st.button("🔄 Leer Sensor", use_container_width=True, type="primary")
 
 st.divider()
 
-# Botón para obtener datos
-if st.button('🔄 Obtener Datos del Sensor', use_container_width=True):
-    with st.spinner('Conectando al broker y esperando datos...'):
-        sensor_data = get_mqtt_message(broker, int(port), topic, client_id)
-        st.session_state.sensor_data = sensor_data
+# ------------------ LÓGICA DE CAPTURA ------------------
+if fetch_click:
+    with st.spinner("⚡ Estableciendo Handshake MQTT y leyendo canal..."):
+        data = get_mqtt_message(broker, int(port), topic, client_id)
+        st.session_state.sensor_data = data
+        st.session_state.last_update = time.strftime("%H:%M:%S")
 
-# Mostrar resultados
-if st.session_state.sensor_data:
-    st.divider()
-    st.subheader('📊 Datos Recibidos')
-    
+# ------------------ MOSTRAR RESULTADOS ------------------
+if st.session_state.sensor_data is not None:
     data = st.session_state.sensor_data
-    
-    # Verificar si hay error
+
+    # Manejo de error
     if isinstance(data, dict) and 'error' in data:
-        st.error(f"❌ Error de conexión: {data['error']}")
+        st.error(f"❌ **Error de Conexión:** {data['error']}")
     else:
-        st.success('✅ Datos recibidos correctamente')
-        
-        # Mostrar datos en formato JSON
-        if isinstance(data, dict):
-            # Mostrar cada campo en una métrica
-            cols = st.columns(len(data))
-            for i, (key, value) in enumerate(data.items()):
-                with cols[i]:
-                    st.metric(label=key, value=value)
-            
-            # Mostrar JSON completo
-            with st.expander('Ver JSON completo'):
-                st.json(data)
-        else:
-            # Si no es diccionario, mostrar como texto
-            st.code(data)
+        st.toast("¡Datos actualizados con éxito!", icon="✅")
+
+        # Barra de estado superior
+        status_col1, status_col2, status_col3 = st.columns(3)
+        status_col1.caption(f"🟢 **Estado:** Conectado")
+        status_col2.caption(
