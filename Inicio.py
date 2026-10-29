@@ -139,4 +139,71 @@ if st.session_state.sensor_data is not None:
         # Barra de estado superior
         status_col1, status_col2, status_col3 = st.columns(3)
         status_col1.caption(f"🟢 **Estado:** Conectado")
-        status_col2.caption(
+        status_col2.caption(f"🕒 **Última Lectura:** {st.session_state.last_update}")
+        status_col3.caption(f"📡 **Tópico:** `{topic}`")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Si el payload es un objeto JSON / Dict
+        if isinstance(data, dict):
+            keys = list(data.keys())
+            num_keys = len(keys)
+
+            # Selección inteligente de columnas (máximo 4 por fila)
+            cols_per_row = min(num_keys, 4) if num_keys > 0 else 1
+            cols = st.columns(cols_per_row)
+
+            # Iconos automáticos según la clave recibida
+            def get_icon(key_name):
+                key_lower = str(key_name).lower()
+                if "temp" in key_lower:
+                    return "🌡️"
+                if "hum" in key_lower:
+                    return "💧"
+                if "pres" in key_lower:
+                    return "🎈"
+                if "volt" in key_lower or "powa" in key_lower:
+                    return "⚡"
+                return "📊"
+
+            for idx, (k, v) in enumerate(data.items()):
+                col_target = cols[idx % cols_per_row]
+                icon = get_icon(k)
+
+                # Formatear el valor si es flotante
+                formatted_val = f"{v:.2f}" if isinstance(v, float) else str(v)
+
+                with col_target:
+                    st.markdown(
+                        f"""
+                        <div class="metric-card">
+                            <div class="metric-title">{icon} {k}</div>
+                            <div class="metric-value">{formatted_val}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+            # Inspección detallada del Payload
+            with st.expander("🛠️ Inspeccionar Payload JSON bruto"):
+                st.json(data)
+
+        # Si el payload es texto plano
+        else:
+            st.info("📩 **Payload en texto plano recibido:**")
+            st.code(data, language="text")
+
+else:
+    # Estado inicial cuando no hay datos aún
+    st.info("👆 Presiona **'Leer Sensor'** para conectarte al broker y obtener la última lectura.")
+
+    with st.expander("ℹ️ Ayuda & Guía de Guía de Conexión"):
+        st.markdown("""
+        1. **Configura el Broker:** Ingresa los datos de conexión en el panel lateral.
+        2. **Publicadores Públicos de prueba:**
+           - `broker.mqttdashboard.com`
+           - `broker.hivemq.com`
+           - `test.mosquitto.org`
+        3. Presiona el botón de actualización arriba para consumir la cola de datos.
+        """)
